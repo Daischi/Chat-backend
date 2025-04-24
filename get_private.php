@@ -1,43 +1,63 @@
 <?php
-header('Content-Type: application/json');
-require 'db.php';
+require_once 'config.php';
 
-$data = json_decode(file_get_contents('php://input'), true);
+// Receber dados do frontend
+$data = json_decode(file_get_contents("php://input"), true);
 
-if (!isset($data['user1_id']) || !isset($data['user2_email'])) {
-    echo json_encode(['status' => 'error', 'message' => 'Dados incompletos']);
+if (!isset($data['user_id']) || !isset($data['receiver_email'])) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'ID do usuário e email do destinatário são obrigatórios'
+    ]);
     exit;
 }
 
-$user1_id = $data['user1_id'];
-$user2_email = $data['user2_email'];
+$user_id = $data['user_id'];
+$receiver_email = $data['receiver_email'];
 
-// Pega ID do segundo usuário
-$stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-$stmt->execute([$user2_email]);
-$user2 = $stmt->fetch();
+// Buscar ID do destinatário pelo email
+$stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+$stmt->bind_param("s", $receiver_email);
+$stmt->execute();
+$result = $stmt->get_result();
 
-if (!$user2) {
-    echo json_encode(['status' => 'error', 'message' => 'Usuário não encontrado']);
+if ($result->num_rows === 0) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Destinatário não encontrado'
+    ]);
     exit;
 }
 
-$user2_id = $user2['id'];
+$receiver = $result->fetch_assoc();
+$receiver_id = $receiver['id'];
 
-// Busca as mensagens entre os dois usuários (ida e volta)
-$stmt = $pdo->prepare("
-    SELECT sender_id, receiver_id, content, created_at
-    FROM private_chats
-    WHERE (sender_id = ? AND receiver_id = ?)
-       OR (sender_id = ? AND receiver_id = ?)
-    ORDER BY created_at ASC
-");
-$stmt->execute([$user1_id, $user2_id, $user2_id, $user1_id]);
+// Buscar mensagens privadas entre os dois usuários
+$query = "SELECT pm.id, pm.sender_id, s.email as sender_email, 
+                 pm.receiver_id, r.email as receiver_email, 
+                 pm.message, pm.created_at 
+          FROM private_messages pm 
+          JOIN users s ON pm.sender_id = s.id 
+          JOIN users r ON pm.receiver_id = r.id 
+          WHERE (pm.sender_id = ? AND pm.receiver_id = ?) 
+             OR (pm.sender_id = ? AND pm.receiver_id = ?) 
+          ORDER BY pm.created_at ASC";
 
-$messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stmt = $conn->prepare($query);
+$stmt->bind_param("iiii", $user_id, $receiver_id, $receiver_id, $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+$messages = [];
+while ($row = $result->fetch_assoc()) {
+    $messages[] = $row;
+}
 
 echo json_encode([
-    'status' => 'ok',
+    'success' => true,
     'messages' => $messages
 ]);
+
+$stmt->close();
+$conn->close();
 ?>

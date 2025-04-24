@@ -1,26 +1,31 @@
 <?php
-header('Content-Type: application/json');
-require 'db.php';
+require_once 'config.php';
 
-try {
-    // Busca todas as mensagens e o email do remetente
-    $stmt = $pdo->query("
-        SELECT messages.id, users.email, messages.content, messages.created_at
-        FROM messages
-        JOIN users ON messages.user_id = users.id
-        ORDER BY messages.created_at ASC
-    ");
+// Buscar todas as mensagens do chat global
+$query = "SELECT m.id, m.sender_id, u.email as sender_email, m.message, m.created_at 
+          FROM messages m 
+          JOIN users u ON m.sender_id = u.id 
+          ORDER BY m.created_at ASC";
 
-    $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$result = $conn->query($query);
 
+if (!$result) {
     echo json_encode([
-        'status' => 'ok',
-        'messages' => $messages
+        'success' => false,
+        'message' => 'Erro ao buscar mensagens: ' . $conn->error
     ]);
-} catch (PDOException $e) {
-    echo json_encode([
-        'status' => 'error',
-        'message' => 'Erro ao buscar mensagens: ' . $e->getMessage()
-    ]);
+    exit;
 }
+
+$messages = [];
+while ($row = $result->fetch_assoc()) {
+    $messages[] = $row;
+}
+
+echo json_encode([
+    'success' => true,
+    'messages' => $messages
+]);
+
+$conn->close();
 ?>

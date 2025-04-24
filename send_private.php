@@ -1,42 +1,54 @@
 <?php
-header('Content-Type: application/json');
-require 'db.php';
+require_once 'config.php';
 
-$data = json_decode(file_get_contents('php://input'), true);
+// Receber dados do frontend
+$data = json_decode(file_get_contents("php://input"), true);
 
-if (!isset($data['sender_id']) || !isset($data['receiver_email']) || !isset($data['content'])) {
-    echo json_encode(['status' => 'error', 'message' => 'Dados incompletos']);
+if (!isset($data['user_id']) || !isset($data['receiver_email']) || !isset($data['message'])) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'ID do usuário, email do destinatário e mensagem são obrigatórios'
+    ]);
     exit;
 }
 
-$sender_id = $data['sender_id'];
+$user_id = $data['user_id'];
 $receiver_email = $data['receiver_email'];
-$content = trim($data['content']);
+$message = $data['message'];
 
-if ($content === '') {
-    echo json_encode(['status' => 'error', 'message' => 'Mensagem vazia']);
+// Buscar ID do destinatário pelo email
+$stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+$stmt->bind_param("s", $receiver_email);
+$stmt->execute();
+$result = $stmt->get_result();
+
+if ($result->num_rows === 0) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Destinatário não encontrado'
+    ]);
     exit;
 }
 
-// Busca o ID do usuário destinatário
-$stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-$stmt->execute([$receiver_email]);
-$receiver = $stmt->fetch();
-
-if (!$receiver) {
-    echo json_encode(['status' => 'error', 'message' => 'Usuário de destino não encontrado']);
-    exit;
-}
-
+$receiver = $result->fetch_assoc();
 $receiver_id = $receiver['id'];
 
-// Insere a mensagem privada
-try {
-    $stmt = $pdo->prepare("INSERT INTO private_chats (sender_id, receiver_id, content) VALUES (?, ?, ?)");
-    $stmt->execute([$sender_id, $receiver_id, $content]);
+// Inserir mensagem privada no banco de dados
+$stmt = $conn->prepare("INSERT INTO private_messages (sender_id, receiver_id, message) VALUES (?, ?, ?)");
+$stmt->bind_param("iis", $user_id, $receiver_id, $message);
 
-    echo json_encode(['status' => 'ok', 'message' => 'Mensagem enviada']);
-} catch (PDOException $e) {
-    echo json_encode(['status' => 'error', 'message' => 'Erro: ' . $e->getMessage()]);
+if ($stmt->execute()) {
+    echo json_encode([
+        'success' => true,
+        'message' => 'Mensagem privada enviada com sucesso'
+    ]);
+} else {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Erro ao enviar mensagem privada: ' . $conn->error
+    ]);
 }
+
+$stmt->close();
+$conn->close();
 ?>
